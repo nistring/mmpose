@@ -536,6 +536,214 @@ class JhmdbPCKAccuracy(PCKAccuracy):
 
 
 @METRICS.register_module()
+class GMPCKAccuracy(PCKAccuracy):
+    """PCK accuracy evaluation metric for GM dataset.
+
+    Calculate the pose accuracy of Percentage of Correct Keypoints (PCK) for
+    each individual keypoint and the averaged accuracy across all keypoints.
+    PCK metric measures accuracy of the localization of the body joints.
+    The distances between predicted positions and the ground-truth ones
+    are typically normalized by the person bounding box size.
+    The threshold (thr) of the normalized distance is commonly set
+    as 0.05, 0.1 or 0.2 etc.
+
+    Note:
+        - length of dataset: N
+        - num_keypoints: K
+        - number of keypoint dimensions: D (typically D = 2)
+
+    Args:
+        thr(float): Threshold of PCK calculation. Default: 0.1.
+        norm_item (str | Sequence[str]): The item used for normalization.
+            Valid items include 'bbox', 'head', which correspond
+            to 'PCK' and 'PCKh' respectively. Default: ``['bbox', 'head']``.
+        collect_device (str): Device name used for collecting results from
+            different ranks during distributed training. Must be ``'cpu'`` or
+            ``'gpu'``. Default: ``'cpu'``.
+        prefix (str, optional): The prefix that will be added in the metric
+            names to disambiguate homonymous metrics of different evaluators.
+            If prefix is not provided in the argument, ``self.default_prefix``
+            will be used instead. Default: ``None``.
+
+    Examples:
+
+    """
+
+    def __init__(self,
+                 thr: float = 0.1,
+                 norm_item: Union[str, Sequence[str]] = ['bbox', 'head'],
+                 collect_device: str = 'cpu',
+                 prefix: Optional[str] = None) -> None:
+        super().__init__(
+            thr=thr,
+            norm_item=norm_item,
+            collect_device=collect_device,
+            prefix=prefix)
+
+    def process(self, data_batch: Sequence[dict],
+                data_samples: Sequence[dict]) -> None:
+        """Process one batch of data samples and predictions.
+
+        The processed
+        results should be stored in ``self.results``, which will be used to
+        compute the metrics when all batches have been processed.
+        Args:
+            data_batch (Sequence[dict]): A batch of data
+                from the dataloader.
+            data_samples (Sequence[dict]): A batch of outputs from
+                the model.
+        """
+        for data_sample in data_samples:
+            # predicted keypoints coordinates, [1, K, D]
+            pred_coords = data_sample['pred_instances']['keypoints']
+            # ground truth data_info
+            gt = data_sample['gt_instances']
+            # ground truth keypoints coordinates, [1, K, D]
+            gt_coords = gt['keypoints']
+            # ground truth keypoints_visible, [1, K, 1]
+            mask = gt['keypoints_visible'].astype(bool).reshape(1, -1)
+
+            result = {
+                'pred_coords': pred_coords,
+                'gt_coords': gt_coords,
+                'mask': mask,
+            }
+
+            if 'bbox' in self.norm_item:
+                assert 'bboxes' in gt, 'The ground truth data info do not ' \
+                    'have the expected normalized_item ``"bbox"``.'
+                # ground truth bboxes, [1, 4]
+                bbox_size_ = np.max(gt['bboxes'][0][2:] - gt['bboxes'][0][:2])
+                bbox_size = np.array([bbox_size_, bbox_size_]).reshape(-1, 2)
+                result['bbox_size'] = bbox_size
+
+            if 'head' in self.norm_item:
+                # used in GMDataset
+                head_size_ = np.linalg.norm(gt_coords[0][0] - gt_coords[0][3])
+                if head_size_ < 1:
+                    head_size_ = np.linalg.norm(pred_coords[0][0] -
+                                                 pred_coords[0][3])
+                    warnings.warn('Ground head torso size < 1. '
+                                  'Use head size from predicted '
+                                  'keypoint results instead.')
+                head_size = np.array([head_size_,
+                                       head_size_]).reshape(-1, 2)
+                result['head_size'] = head_size
+
+            self.results.append(result)
+
+    def compute_metrics(self, results: list) -> Dict[str, float]:
+        """Compute the metrics from processed results.
+
+        Args:
+            results (list): The processed results of each batch.
+
+        Returns:
+            Dict[str, float]: The computed metrics. The keys are the names of
+            the metrics, and the values are corresponding results.
+            If `'bbox'` in `self.norm_item`, the returned results are the pck
+            accuracy normalized by `bbox_size`, which have the following keys:
+                - 'Head PCK': The PCK of head
+                - 'Eye PCK': The PCK of eye
+                - 'Neck PCK': The PCK of neck
+                - 'Sho PCK': The PCK of shoulder
+                - 'Elb PCK': The PCK of elbow
+                - 'Wri PCK': The PCK of wrist
+                - 'Hand PCK': The PCK of hand
+                - 'Pel PCK': The PCK of pelvis
+                - 'Hip PCK': The PCK of hip
+                - 'Knee PCK': The PCK of knee
+                - 'Ank PCK': The PCK of ankle
+                - 'Foot PCK': The PCK of foot
+                - 'PCK': The mean PCK over all keypoints
+            If `'head'` in `self.norm_item`, the returned results are the pck
+            accuracy normalized by `head_size`, which have the following keys:
+                - 'Head PCKh': The PCK of head
+                - 'Eye PCKh': The PCK of eye
+                - 'Neck PCKh': The PCK of neck
+                - 'Sho PCKh': The PCK of shoulder
+                - 'Elb PCKh': The PCK of elbow
+                - 'Wri PCKh': The PCK of wrist
+                - 'Hand PCKh': The PCK of hand
+                - 'Pel PCKh': The PCK of pelvis
+                - 'Hip PCKh': The PCK of hip
+                - 'Knee PCKh': The PCK of knee
+                - 'Ank PCKh': The PCK of ankle
+                - 'Foot PCKh': The PCK of foot
+                - 'PCKh': The mean PCK over all keypoints
+        """
+        logger: MMLogger = MMLogger.get_current_instance()
+
+        # pred_coords: [N, K, D]
+        pred_coords = np.concatenate(
+            [result['pred_coords'] for result in results])
+        # gt_coords: [N, K, D]
+        gt_coords = np.concatenate([result['gt_coords'] for result in results])
+        # mask: [N, K]
+        mask = np.concatenate([result['mask'] for result in results])
+
+        metrics = dict()
+        if 'bbox' in self.norm_item:
+            norm_size_bbox = np.concatenate(
+                [result['bbox_size'] for result in results])
+
+            logger.info(f'Evaluating {self.__class__.__name__} '
+                        f'(normalized by ``"bbox_size"``)...')
+
+            pck_p, pck, _ = keypoint_pck_accuracy(pred_coords, gt_coords, mask,
+                                                  self.thr, norm_size_bbox)
+            stats = {
+                'Head PCK': pck_p[0],
+                'Eye PCK': 0.5 * pck_p[1] + 0.5 * pck_p[2],
+                'Neck PCK': pck_p[3],
+                'Sho PCK': 0.5 * pck_p[4] + 0.5 * pck_p[10],
+                'Elb PCK': 0.25 * pck_p[5] + 0.25 * pck_p[6] + 0.25 * pck_p[11] + 0.25 * pck_p[12],
+                'Wri PCK': 0.25 * pck_p[7] + 0.25 * pck_p[8] + 0.25 * pck_p[13] + 0.25 * pck_p[14],
+                'Hand PCK': 0.5 * pck_p[9] + 0.5 * pck_p[15],
+                'Pel PCK': pck_p[16],
+                'Hip PCK': 0.5 * pck_p[17] + 0.5 * pck_p[23],
+                'Knee PCK': 0.25 * pck_p[18] + 0.25 * pck_p[19] + 0.25 * pck_p[24] + 0.25 * pck_p[25],
+                'Ank PCK': 0.25 * pck_p[20] + 0.25 * pck_p[21] + 0.25 * pck_p[26] + 0.25 * pck_p[27],
+                'Foot PCK': 0.5 * pck_p[22] + 0.5 * pck_p[28],
+                'PCK': pck
+            }
+
+            for stats_name, stat in stats.items():
+                metrics[stats_name] = stat
+
+        if 'head' in self.norm_item:
+            norm_size_head = np.concatenate(
+                [result['head_size'] for result in results])
+
+            logger.info(f'Evaluating {self.__class__.__name__} '
+                        f'(normalized by ``"head_size"``)...')
+
+            pck_p, pck, _ = keypoint_pck_accuracy(pred_coords, gt_coords, mask,
+                                                  self.thr, norm_size_head)
+
+            stats = {
+                'Head PCKh': pck_p[0],
+                'Eye PCKh': 0.5 * pck_p[1] + 0.5 * pck_p[2],
+                'Neck PCKh': pck_p[3],
+                'Sho PCKh': 0.5 * pck_p[4] + 0.5 * pck_p[10],
+                'Elb PCKh': 0.25 * pck_p[5] + 0.25 * pck_p[6] + 0.25 * pck_p[11] + 0.25 * pck_p[12],
+                'Wri PCKh': 0.25 * pck_p[7] + 0.25 * pck_p[8] + 0.25 * pck_p[13] + 0.25 * pck_p[14],
+                'Hand PCKh': 0.5 * pck_p[9] + 0.5 * pck_p[15],
+                'Pel PCKh': pck_p[16],
+                'Hip PCKh': 0.5 * pck_p[17] + 0.5 * pck_p[23],
+                'Knee PCKh': 0.25 * pck_p[18] + 0.25 * pck_p[19] + 0.25 * pck_p[24] + 0.25 * pck_p[25],
+                'Ank PCKh': 0.25 * pck_p[20] + 0.25 * pck_p[21] + 0.25 * pck_p[26] + 0.25 * pck_p[27],
+                'Foot PCKh': 0.5 * pck_p[22] + 0.5 * pck_p[28],
+                'PCKh': pck
+            }
+
+            for stats_name, stat in stats.items():
+                metrics[stats_name] = stat
+
+        return metrics
+
+
+@METRICS.register_module()
 class AUC(BaseMetric):
     """AUC evaluation metric.
 

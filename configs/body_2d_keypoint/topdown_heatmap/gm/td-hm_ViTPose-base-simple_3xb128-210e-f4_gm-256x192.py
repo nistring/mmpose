@@ -44,7 +44,7 @@ auto_scale_lr = dict(base_batch_size=1024)
 
 # hooks
 default_hooks = dict(
-    checkpoint=dict(save_best='@0.05/PCKh', rule='greater', max_keep_ckpts=1))
+    checkpoint=dict(save_best='@0.1/PCKh', rule='greater', max_keep_ckpts=1))
 
 # codec settings
 codec = dict(
@@ -164,6 +164,7 @@ test_dataloader = dict(
 
 # evaluators
 val_evaluator = [
-    dict(type='GMPCKAccuracy', thr=0.05, norm_item=['bbox', 'head'], prefix="@0.05"),
+    dict(type='GMPCKAccuracy', thr=0.1, norm_item=['bbox', 'head'], prefix="@0.1"),
+    dict(type='GMPCKAccuracy', thr=0.5, norm_item=['bbox', 'head'], prefix="@0.5"),
 ]
 test_evaluator = val_evaluator

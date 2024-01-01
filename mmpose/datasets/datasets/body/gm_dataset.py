@@ -9,35 +9,35 @@ class GMDataset(BaseCocoStyleDataset):
 
     GM keypoints::
 
-        1: Head
-        2: Eye_R
-        3: Eye_L
-        4: Neck
-        5: Sholuder_R
-        6: Elbow_high_R
-        7: Elbow_low_R
-        8: Wrist_high_R
-        9: Wrist_low_R
-        10: Hand_R 
-        11: Sholuder_L 
-        12: Elbow_high_L
-        13: Elbow_low_L
-        14: Wrist_high_L
-        15: Wrist_low_L 
-        16: Hand_L 
-        17: Pelvis 
-        18: Hip_R 
-        19: Knee_right_R 
-        20: Knee_left_R 
-        21: Ankle_right_R 
-        22: Ankle_left_R 
-        23: Foot_R 
-        24: Hip_L 
-        25: Knee_right_L 
-        26: Knee_left_L 
-        27: Ankle_right_L 
-        28: Ankle_left_L 
-        29: Foot_L
+        0: "Head",
+        1: "R_Eye",
+        2: "L_Eye",
+        3: "Neck",
+        4: "R_Shoulder",
+        5: "R_Lat_Elbow",
+        6: "R_Med_Elbow",
+        7: "R_Radial_Wrist",
+        8: "R_Ulnar_Wrist",
+        9: "R_Hand",
+        10: "L_Sholuder",
+        11: "L_Lat_Elbow",
+        12: "L_Med_Elbow",
+        13: "L_Radial_Wrist",
+        14: "L_Ulnar_Wrist",
+        15: "L_Hand",
+        16: "Pelvis",
+        17: "R_Hip",
+        18: "R_Lat_Knee",
+        19: "R_Med_Knee",
+        20: "R_Lat_Ankle",
+        21: "R_Med_Ankle",
+        22: "R_Foot",
+        23: "L_Hip",
+        24: "L_Lat_Knee",
+        25: "L_Med_Knee",
+        26: "L_Lat_Ankle",
+        27: "L_Med_Ankle",
+        28: "L_Foot",
 
     Args:
         ann_file (str): Annotation file path. Default: ''.

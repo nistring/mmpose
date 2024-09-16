@@ -18,5 +18,5 @@ __all__ = [
     'CocoDataset', 'MpiiDataset', 'MpiiTrbDataset', 'AicDataset',
     'CrowdPoseDataset', 'OCHumanDataset', 'MhpDataset', 'PoseTrack18Dataset',
     'JhmdbDataset', 'PoseTrack18VideoDataset', 'HumanArtDataset',
-    'HumanArt21Dataset', 'ExlposeDataset', 'GMDataset
+    'HumanArt21Dataset', 'ExlposeDataset', 'GMDataset'
 ]

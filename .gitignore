@@ -133,3 +133,5 @@ docs/**/modelzoo.md
 
 *.DS_Store
 nohup.out
+*.json
+*.mp4

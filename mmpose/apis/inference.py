@@ -1,7 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import warnings
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Sequence
 
 import numpy as np
 import torch
@@ -18,6 +18,9 @@ from mmpose.models.builder import build_pose_estimator
 from mmpose.structures import PoseDataSample
 from mmpose.structures.bbox import bbox_xywh2xyxy
 
+from mmdet.structures import DetDataSample, SampleList
+from mmdet.utils import get_test_pipeline_cfg
+from mmcv.ops import RoIPool
 
 def dataset_meta_from_config(config: Config,
                              dataset_mode: str = 'train') -> Optional[dict]:
@@ -196,6 +199,156 @@ def inference_topdown(model: nn.Module,
             results = model.test_step(batch)
     else:
         results = []
+
+    return results
+
+
+def batch_inference_topdown(model: nn.Module,
+                            imgs: List[Union[np.ndarray, str]],
+                            bboxes_list: Optional[List[Union[List,
+                                                             np.ndarray]]] = None,
+                            bbox_format: str = 'xyxy') -> List[PoseDataSample]:
+    """Inference image with a top-down pose estimator.
+
+    Args:
+        model (nn.Module): The top-down pose estimator
+        img (np.ndarray | str): The loaded image or image file to inference
+        bboxes (np.ndarray, optional): The bboxes in shape (N, 4), each row
+            represents a bbox. If not given, the entire image will be regarded
+            as a single bbox area. Defaults to ``None``
+        bbox_format (str): The bbox format indicator. Options are ``'xywh'``
+            and ``'xyxy'``. Defaults to ``'xyxy'``
+
+    Returns:
+        List[:obj:`PoseDataSample`]: The inference results. Specifically, the
+        predicted keypoints and scores are saved at
+        ``data_sample.pred_instances.keypoints`` and
+        ``data_sample.pred_instances.keypoint_scores``.
+    """
+    scope = model.cfg.get('default_scope', 'mmpose')
+    if scope is not None:
+        init_default_scope(scope)
+    pipeline = Compose(model.cfg.test_dataloader.dataset.pipeline)
+
+    for i, bboxes in enumerate(bboxes_list):
+        if bboxes is None or len(bboxes) == 0:
+            # get bbox from the image size
+            if isinstance(imgs[i], str):
+                w, h = Image.open(imgs[i]).size
+            else:
+                h, w = imgs[i].shape[:2]
+
+            bboxes = np.array([[0, 0, w, h]], dtype=np.float32)
+        else:
+            if isinstance(bboxes, list):
+                bboxes = np.array(bboxes)
+
+            assert bbox_format in {'xyxy', 'xywh'}, \
+                f'Invalid bbox_format "{bbox_format}".'
+
+            if bbox_format == 'xywh':
+                bboxes = bbox_xywh2xyxy(bboxes)
+
+        bboxes_list[i] = bboxes
+
+    # construct batch data samples
+    data_list = []
+    for bboxes, img in zip(bboxes_list, imgs):
+        for bbox in bboxes:
+            if isinstance(img, str):
+                data_info = dict(img_path=img)
+            else:
+                data_info = dict(img=img)
+            data_info['bbox'] = bbox[None]  # shape (1, 4)
+            data_info['bbox_score'] = np.ones(1, dtype=np.float32)  # shape (1,)
+            data_info.update(model.dataset_meta)
+            data_list.append(pipeline(data_info))
+
+    if data_list:
+        # collate data list into a batch, which is a dict with following keys:
+        # batch['inputs']: a list of input images
+        # batch['data_samples']: a list of :obj:`PoseDataSample`
+        batch = pseudo_collate(data_list)
+        with torch.no_grad():
+            results = model.test_step(batch)
+    else:
+        results = []
+
+    return results
+
+
+ImagesType = Union[str, np.ndarray, Sequence[str], Sequence[np.ndarray]]
+
+
+def batch_inference_detector(
+    model: nn.Module,
+    imgs: ImagesType,
+    test_pipeline: Optional[Compose] = None,
+    text_prompt: Optional[str] = None,
+    custom_entities: bool = False,
+) -> Union[DetDataSample, SampleList]:
+    """Inference image(s) with the detector.
+
+    Args:
+        model (nn.Module): The loaded detector.
+        imgs (str, ndarray, Sequence[str/ndarray]):
+           Either image files or loaded images.
+        test_pipeline (:obj:`Compose`): Test pipeline.
+
+    Returns:
+        :obj:`DetDataSample` or list[:obj:`DetDataSample`]:
+        If imgs is a list or tuple, the same length list type results
+        will be returned, otherwise return the detection results directly.
+    """
+
+    if isinstance(imgs, (list, tuple)):
+        is_batch = True
+    else:
+        imgs = [imgs]
+        is_batch = False
+
+    cfg = model.cfg
+
+    if test_pipeline is None:
+        cfg = cfg.copy()
+        test_pipeline = get_test_pipeline_cfg(cfg)
+        if isinstance(imgs[0], np.ndarray):
+            # Calling this method across libraries will result
+            # in module unregistered error if not prefixed with mmdet.
+            test_pipeline[0].type = 'mmdet.LoadImageFromNDArray'
+
+        test_pipeline = Compose(test_pipeline)
+
+    if model.data_preprocessor.device.type == 'cpu':
+        for m in model.modules():
+            assert not isinstance(
+                m, RoIPool
+            ), 'CPU inference with RoIPool is not supported currently.'
+
+    result_list = []
+    data_list = {'inputs': [], 'data_samples': []}
+    for i, img in enumerate(imgs):
+        # prepare data
+        if isinstance(img, np.ndarray):
+            # TODO: remove img_id.
+            data_ = dict(img=img, img_id=0)
+        else:
+            # TODO: remove img_id.
+            data_ = dict(img_path=img, img_id=0)
+
+        if text_prompt:
+            data_['text'] = text_prompt
+            data_['custom_entities'] = custom_entities
+
+        # build the data pipeline
+        data_ = test_pipeline(data_)
+
+        data_list['inputs'].append(data_['inputs'])
+        data_list['data_samples'].append(data_['data_samples'])
+
+    # forward the model
+    with torch.no_grad():
+        results = model.test_step(data_list)
 
     return results
 

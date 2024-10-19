@@ -232,13 +232,7 @@ def batch_inference_topdown(model: nn.Module,
 
     for i, bboxes in enumerate(bboxes_list):
         if bboxes is None or len(bboxes) == 0:
-            # get bbox from the image size
-            if isinstance(imgs[i], str):
-                w, h = Image.open(imgs[i]).size
-            else:
-                h, w = imgs[i].shape[:2]
-
-            bboxes = np.array([[0, 0, w, h]], dtype=np.float32)
+            continue
         else:
             if isinstance(bboxes, list):
                 bboxes = np.array(bboxes)
@@ -259,8 +253,8 @@ def batch_inference_topdown(model: nn.Module,
                 data_info = dict(img_path=img)
             else:
                 data_info = dict(img=img)
-            data_info['bbox'] = bbox[None]  # shape (1, 4)
-            data_info['bbox_score'] = np.ones(1, dtype=np.float32)  # shape (1,)
+            data_info['bbox'] = bbox[None, :4]  # shape (1, 4)
+            data_info['bbox_score'] = bbox[-1:]  # shape (1,)
             data_info.update(model.dataset_meta)
             data_list.append(pipeline(data_info))
 

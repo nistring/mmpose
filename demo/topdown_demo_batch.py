@@ -47,7 +47,7 @@ def process_images(args,
             (pred_instance.bboxes, pred_instance.scores[:, None]), axis=1)
         bboxes = bboxes[np.logical_and(pred_instance.labels == args.det_cat_id,
                                        pred_instance.scores > args.bbox_thr)]
-        bboxes = bboxes[nms(bboxes, args.nms_thr), :4]
+        bboxes = bboxes[nms(bboxes, args.nms_thr)]
         bboxes_list.append(bboxes)
 
     # predict keypoints
@@ -134,7 +134,7 @@ def main():
     parser.add_argument(
         '--bbox-thr',
         type=float,
-        default=0.3,
+        default=0.5,
         help='Bounding box score threshold')
     parser.add_argument(
         '--nms-thr',

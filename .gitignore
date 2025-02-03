@@ -135,3 +135,4 @@ docs/**/modelzoo.md
 nohup.out
 *.json
 *.mp4
+pred

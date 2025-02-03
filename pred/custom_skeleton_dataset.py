@@ -70,7 +70,8 @@ for keypoints in ["17", "29"]:
             dataset["annotations"].append(
                 {
                     'frame_dir': file,
-                    'label': assess2label[df.loc[file, "Assess"]],
+                    # 'label': assess2label[df.loc[file, "Assess"]],
+                    'label': df.loc[file, "Assess"],
                     'img_shape': shape,
                     'original_shape': shape,
                     'total_frames': len(keypoint),

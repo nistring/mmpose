@@ -53,6 +53,7 @@ def process_one_image(args,
     elif isinstance(img, np.ndarray):
         img = mmcv.bgr2rgb(img)
 
+    img = np.full(img.shape, 255) 
     if visualizer is not None:
         visualizer.add_datasample(
             'result',
@@ -140,12 +141,12 @@ def main():
     parser.add_argument(
         '--radius',
         type=int,
-        default=3,
+        default=10,
         help='Keypoint radius for visualization')
     parser.add_argument(
         '--thickness',
         type=int,
-        default=1,
+        default=5,
         help='Link thickness for visualization')
     parser.add_argument(
         '--show-interval', type=int, default=0, help='Sleep seconds per frame')

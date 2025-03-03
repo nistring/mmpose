@@ -135,5 +135,8 @@ docs/**/modelzoo.md
 nohup.out
 *.json
 *.mp4
+<<<<<<< HEAD
 
+=======
+>>>>>>> d461550911868bb3771181be30eba7406a22a9d0
 pred

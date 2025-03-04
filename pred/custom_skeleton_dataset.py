@@ -1,21 +1,21 @@
 import numpy as np
 import json
 import cv2
-import os
 import pandas as pd
-from sklearn.model_selection import train_test_split
 import pickle
-from tqdm import tqdm
-import math
 
+# Load the dataset from an Excel file
 df = pd.read_excel("../data/GM_data_index_final.xlsx", usecols="C,J,X,Z")
 df.dropna(subset=["video name", 'Assess'], inplace=True)
 df = df[df.quality == 1]
 
+# Initialize lists to hold training and testing data
 fidgety_train, fidgety_test, writhing_train, writhing_test = [], [], [], []
 df.set_index("video name", inplace=True)
 df_train = df[df.start.isnull()]
 df_test = df.dropna(subset="start")
+
+# Split the data into training and testing sets based on the 'Assess' column
 for index, row in df_train.iterrows():
     if row["Assess"] in ["NL", "PR", "CS"]:
         writhing_train.append(index)
@@ -27,11 +27,10 @@ for index, row in df_test.iterrows():
     else:
         fidgety_test.append(index)
 
-# Normal 0, abnormal 1
-assess2label = {"(-)": 1, "(+/-)":1, "(+)": 0, "(++)":0, "NL":0, "PR":1, "CS":1}
 FPS = 30
 clip_len = FPS * 60 # at least 60 seconds
 
+# Process keypoints for different configurations
 for keypoints in ["17", "29"]:
 
     dataset = {
@@ -44,6 +43,7 @@ for keypoints in ["17", "29"]:
         "annotations":[]
     }
 
+    # Iterate over each video file in the dataset
     for file in df.index:
         with open(f"{keypoints}/results_{file}.json", "r") as f:
             anno = json.load(f)["instance_info"]
@@ -66,11 +66,11 @@ for keypoints in ["17", "29"]:
                 keypoint_score.append(instance[0]["keypoint_scores"])
                 indices.append(i)
 
+        # Only include videos with enough keypoints
         if len(keypoint) >= clip_len:
             dataset["annotations"].append(
                 {
                     'frame_dir': file,
-                    # 'label': assess2label[df.loc[file, "Assess"]],
                     'label': df.loc[file, "Assess"],
                     'img_shape': shape,
                     'original_shape': shape,
@@ -81,5 +81,6 @@ for keypoints in ["17", "29"]:
                 }
             )
 
+    # Save the dataset to a pickle file
     with open(f"GMA{keypoints}.pkl", 'wb') as file:
         pickle.dump(dataset, file)
